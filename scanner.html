@@ -110,38 +110,47 @@
         const btnSiguiente = document.getElementById('btnEscanear');
 
         btnMarcar.disabled = true;
-        btnMarcar.innerText = "⏳ Validando en servidor...";
+        btnMarcar.innerText = "⏳ Conectando con la base de datos...";
 
         try {
-            // Empaquetamos los datos en la URL para evitar el bloqueo CORS
-            const params = new URLSearchParams({
-                action: 'marcar_usado',
-                fila: qrDataActual.Fila,
-                nombre: qrDataActual.Nombre
+            const response = await fetch(APP_URL, {
+                method: 'POST',
+                // IMPORTANTE: Usamos text/plain sin 'no-cors' para esquivar el bloqueo de seguridad y poder leer la respuesta
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'marcar_usado',
+                    qrData: qrDataActual
+                })
             });
 
-            // Usamos GET con los parámetros adjuntos
-            const response = await fetch(APP_URL + "?" + params.toString(), {
-                method: 'GET'
-            });
+            // Leemos la respuesta como texto crudo primero. Así, si Google lanza un error raro, no colapsa.
+            const textoRespuesta = await response.text();
 
-            const result = await response.json();
+            try {
+                // Intentamos convertir ese texto a los datos JSON que esperamos
+                const result = JSON.parse(textoRespuesta);
+                
+                if (result.status === "success") {
+                    uiResultado.className = 'result-card success';
+                    uiMensaje.innerText = "✅ " + (result.message || "Acceso permitido.");
+                } else {
+                    uiResultado.className = 'result-card error';
+                    uiMensaje.innerText = "❌ " + result.message;
+                }
+                
+                btnMarcar.style.display = 'none'; 
+                btnSiguiente.style.display = 'block'; 
 
-            if (result.status === "success") {
-                uiResultado.className = 'result-card success';
-                uiMensaje.innerText = "✅ " + result.message;
-                btnMarcar.style.display = 'none'; 
-            } else {
-                uiResultado.className = 'result-card error';
-                uiMensaje.innerText = "❌ " + result.message;
-                btnMarcar.style.display = 'none'; 
+            } catch (jsonError) {
+                // Si entra aquí, significa que Google bloqueó la petición o devolvió una página web de error.
+                alert("Error en Google Apps Script. Revisa que hayas publicado la 'Nueva Versión'.");
+                btnMarcar.disabled = false;
+                btnMarcar.innerText = "🎟️ Reintentar";
             }
-            
-            btnSiguiente.style.display = 'block'; 
 
         } catch (error) {
-            console.error("Error capturado:", error);
-            alert("Sigue habiendo un error de conexión. Revisa la consola para más detalles.");
+            // AHORA SÍ veremos el motivo real en la pantalla de tu teléfono
+            alert("Error del navegador: " + error.message);
             btnMarcar.disabled = false;
             btnMarcar.innerText = "🎟️ Marcar Entrada como Usada";
         }
