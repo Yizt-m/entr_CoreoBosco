@@ -23,7 +23,7 @@
         .btn-green:hover { background: #218838; }
         button:disabled { background: #ccc; cursor: not-allowed; }
         
-        .detalles { font-size: 0.9em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 10px; border-radius: 5px; }
+        .detalles { font-size: 0.95em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 12px; border-radius: 5px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -39,24 +39,21 @@
     </div>
 
     <button id="btnMarcarUsado" class="btn-green" style="display:none;" onclick="procesarUsoTicket()">🎟️ Marcar Entrada como Usada</button>
-    
     <button id="btnEscanear" class="btn-blue" style="display:none;" onclick="reiniciarEscaneo()">Escanear Siguiente Ticket</button>
 </div>
 
 <script>
-    const APP_URL = "TU_URL_DE_APPS_SCRIPT_AQUI"; // <--- NO OLVIDES PEGAR TU URL AQUÍ
+    const APP_URL = "TU_URL_DE_APPS_SCRIPT_AQUI"; // <--- PEGA TU URL DE APPS SCRIPT AQUÍ
     let html5QrcodeScanner;
-    let qrDataActual = null; // Guardará los datos del QR temporalmente
+    let qrDataActual = null; 
 
     function iniciarEscaner() {
-        html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+        html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
         html5QrcodeScanner.render(onScanSuccess, onScanFailure);
     }
 
-    // 1. Detecta el QR y muestra la info (pero NO actualiza el Excel aún)
     function onScanSuccess(decodedText, decodedResult) {
-        html5QrcodeScanner.pause(); // Pausar cámara
+        html5QrcodeScanner.pause(); 
         
         const uiResultado = document.getElementById('resultado');
         const uiMensaje = document.getElementById('mensajeEstado');
@@ -67,27 +64,36 @@
         try {
             qrDataActual = JSON.parse(decodedText);
             
-            // Validación local rápida (Si el administrador no marcó Correcto/Validado al generar)
             if (qrDataActual.Estado_Pago !== "Correcto" && qrDataActual.Estado_Pago !== "Validado") {
                 uiResultado.className = 'result-card error';
                 uiMensaje.innerText = "⚠️ ADVERTENCIA: PAGO NO VALIDADO";
                 uiResultado.style.display = 'block';
                 btnSiguiente.style.display = 'block';
-                return; // Se detiene aquí, no muestra el botón verde
+                return; 
             }
 
-            // Mostrar los datos leídos
+            // Mostrar TODOS los datos leídos
             uiResultado.className = 'result-card info';
             uiMensaje.innerText = "Ticket Identificado";
             uiDetalles.style.display = 'block';
             uiDetalles.innerHTML = `
-                <strong>Titular:</strong> ${qrDataActual.Nombre}<br>
-                <strong>N° Entradas:</strong> ${qrDataActual.Entradas}<br>
-                <strong>Fila en Sheet:</strong> ${qrDataActual.Fila}
+                <strong>👤 Titular:</strong> ${qrDataActual.Nombre}<br>
+                <strong>🎟️ N° Entradas:</strong> ${qrDataActual.Entradas}<br>
+                <strong>💵 Método:</strong> ${qrDataActual.Metodo_Pago}<br>
+                <strong>✅ Estado:</strong> ${qrDataActual.Estado_Pago}<br>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
+                <span style="font-size: 0.8em; color: gray;">ID Fila Sheet: ${qrDataActual.Fila || 'NO DEFINIDA (QR Antiguo)'}</span>
             `;
             
             uiResultado.style.display = 'block';
-            btnMarcar.style.display = 'block'; // Mostrar el botón manual
+            
+            // Si es un QR viejo sin fila, no mostrar el botón verde para evitar errores
+            if(qrDataActual.Fila) {
+                btnMarcar.style.display = 'block'; 
+            } else {
+                alert("Este QR es antiguo y no contiene el ID de fila. Debe regenerarse en la base de datos.");
+                btnSiguiente.style.display = 'block';
+            }
 
         } catch (error) {
             uiResultado.style.display = 'block';
@@ -97,7 +103,6 @@
         }
     }
 
-    // 2. Al presionar el botón verde, se envía la orden al Google Sheets
     async function procesarUsoTicket() {
         const btnMarcar = document.getElementById('btnMarcarUsado');
         const uiResultado = document.getElementById('resultado');
@@ -105,28 +110,36 @@
         const btnSiguiente = document.getElementById('btnEscanear');
 
         btnMarcar.disabled = true;
-        btnMarcar.innerText = "⏳ Procesando...";
+        btnMarcar.innerText = "⏳ Conectando con Google Sheets...";
 
         try {
-            await fetch(APP_URL, {
+            const response = await fetch(APP_URL, {
                 method: 'POST',
-                mode: 'no-cors', 
-                headers: { 'Content-Type': 'application/json' },
+                // Se usa text/plain en lugar de application/json para que Google no bloquee la lectura de la respuesta por CORS
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
-                    action: 'marcar_usado', // Acción específica
+                    action: 'marcar_usado', 
                     qrData: qrDataActual
                 })
             });
 
-            // Éxito visual
-            uiResultado.className = 'result-card success';
-            uiMensaje.innerText = "✅ ACCESO PERMITIDO Y REGISTRADO";
-            btnMarcar.style.display = 'none'; // Ocultar botón verde
-            btnSiguiente.style.display = 'block'; // Mostrar botón de siguiente
+            // Leer la respuesta real del servidor
+            const result = await response.json();
+
+            if (result.status === "success") {
+                uiResultado.className = 'result-card success';
+                uiMensaje.innerText = "✅ " + result.message;
+                btnMarcar.style.display = 'none'; 
+            } else {
+                uiResultado.className = 'result-card error';
+                uiMensaje.innerText = "❌ " + result.message;
+                btnMarcar.style.display = 'none'; 
+            }
+            
+            btnSiguiente.style.display = 'block'; 
 
         } catch (error) {
-            alert("Error de conexión. Verifica el internet.");
-        } finally {
+            alert("Error de red. Verifica tu conexión a internet.");
             btnMarcar.disabled = false;
             btnMarcar.innerText = "🎟️ Marcar Entrada como Usada";
         }
@@ -139,7 +152,7 @@
         document.getElementById('btnMarcarUsado').style.display = 'none';
         document.getElementById('btnEscanear').style.display = 'none';
         qrDataActual = null;
-        html5QrcodeScanner.resume(); // Reanudar cámara
+        html5QrcodeScanner.resume(); 
     }
 
     iniciarEscaner();
