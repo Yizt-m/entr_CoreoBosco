@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro Coreo Bosco</title>
+    <style>
+        :root {
+            --primary: #0056b3;
+            --accent: #ffcc00;
+            --bg: #f4f7f6;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
+        h2 { color: var(--primary); text-align: center; margin-bottom: 5px; }
+        p.subtitle { text-align: center; color: #666; font-size: 0.9em; margin-bottom: 25px; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        
+        .resumen { background: #eef7ff; padding: 15px; border-radius: 8px; border-left: 5px solid var(--primary); margin: 20px 0; }
+        .resumen p { margin: 5px 0; font-size: 1.1em; }
+        
+        .card { background: #fff9db; border: 1px solid #ffe066; padding: 15px; border-radius: 8px; margin-top: 15px; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-size: 18px; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        button:hover { background: #004494; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        .loading { text-align: center; color: var(--primary); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Coreo Bosco 2026</h2>
+    <p class="subtitle">Formulario de Compra de Entradas</p>
+
+    <div id="loader" class="loading">Cargando tasa del día...</div>
+
+    <form id="registroForm" style="display:none;">
+        <div class="form-group">
+            <label>Nombre Completo</label>
+            <input type="text" id="nombre" required placeholder="Ej. Yilber Teran">
+        </div>
+
+        <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" id="telefono" required placeholder="0412-0000000">
+        </div>
+
+        <div class="form-group">
+            <label>Correo Electrónico</label>
+            <input type="email" id="correo" required placeholder="usuario@gmail.com">
+        </div>
+
+        <div class="form-group">
+            <label>Cantidad de Entradas</label>
+            <input type="number" id="cantidad" min="1" value="1" required>
+            <small style="color: #666;">Promo: 1x2$ o 3x5$</small>
+        </div>
+
+        <div class="resumen">
+            <p>Total USD: <strong id="txtUSD">2.00</strong>$</p>
+            <p>Total BS: <strong id="txtBS">0.00</strong> Bs.</p>
+        </div>
+
+        <div class="form-group">
+            <label>Forma de Pago</label>
+            <select id="metodoPago" required>
+                <option value="">Seleccione...</option>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Pago Móvil / Transferencia</option>
+            </select>
+        </div>
+
+        <div id="infoEfectivo" class="card" style="display:none;">
+            <p>📍 <strong>Nota:</strong> El efectivo se entregará el día del Coreo Bosco al equipo organizador.</p>
+        </div>
+
+        <div id="infoTransferencia" class="card" style="display:none;">
+            <p>💳 <strong>Datos de Pago:</strong><br>
+            Banco: Mercantil (0105)<br>
+            CI: 12.345.678<br>
+            Tlf: 0412-1234567</p>
+            
+            <label>Número de Referencia</label>
+            <input type="text" id="numeroRef" placeholder="Últimos 4 o 6 dígitos">
+        </div>
+
+        <button type="submit" id="btnEnviar">Confirmar Compra</button>
+    </form>
+</div>
+
+<script>
+    // --- CONFIGURACIÓN ---
+    const APP_URL = "TU_URL_DE_APPS_SCRIPT_AQUI"; // <--- PEGA TU URL AQUÍ
+    let tasaDelDia = 0;
+
+    const form = document.getElementById('registroForm');
+    const inputCant = document.getElementById('cantidad');
+    const selectPago = document.getElementById('metodoPago');
+    const infoEfectivo = document.getElementById('infoEfectivo');
+    const infoTrans = document.getElementById('infoTransferencia');
+    const loader = document.getElementById('loader');
+
+    // 1. Obtener la tasa al cargar
+    async function obtenerTasa() {
+        try {
+            const response = await fetch(APP_URL);
+            const data = await response.json();
+            tasaDelDia = data.tasa;
+            loader.style.display = 'none';
+            form.style.display = 'block';
+            calcular();
+        } catch (e) {
+            alert("Error al conectar con la base de datos. Verifica la URL del Script.");
+        }
+    }
+
+    // 2. Lógica de cálculo (3 x 5$)
+    function calcular() {
+        const cant = parseInt(inputCant.value) || 0;
+        const promos = Math.floor(cant / 3);
+        const individuales = cant % 3;
+        
+        const totalUSD = (promos * 5) + (individuales * 2);
+        const totalBS = totalUSD * tasaDelDia;
+
+        document.getElementById('txtUSD').innerText = totalUSD.toFixed(2);
+        document.getElementById('txtBS').innerText = totalBS.toLocaleString('es-VE', {minimumFractionDigits: 2});
+        return { usd: totalUSD, bs: totalBS };
+    }
+
+    // 3. Manejo de Interfaz
+    inputCant.addEventListener('input', calcular);
+
+    selectPago.addEventListener('change', () => {
+        infoEfectivo.style.display = selectPago.value === 'Efectivo' ? 'block' : 'none';
+        infoTrans.style.display = selectPago.value === 'Transferencia' ? 'block' : 'none';
+        document.getElementById('numeroRef').required = (selectPago.value === 'Transferencia');
+    });
+
+    // 4. Envío de datos
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('btnEnviar');
+        btn.disabled = true;
+        btn.innerText = "Enviando...";
+
+        const totales = calcular();
+        const datos = {
+            nombre: document.getElementById('nombre').value,
+            telefono: document.getElementById('telefono').value,
+            correo: document.getElementById('correo').value,
+            cantidad: inputCant.value,
+            metodoPago: selectPago.value,
+            numeroRef: document.getElementById('numeroRef').value || "N/A",
+            totalUSD: totales.usd,
+            totalBS: totales.bs.toFixed(2)
+        };
+
+        try {
+            await fetch(APP_URL, {
+                method: 'POST',
+                mode: 'no-cors', // Importante para Apps Script
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(datos)
+            });
+            
+            alert("¡Registro exitoso! Nos vemos en el Coreo Bosco.");
+            form.reset();
+            calcular();
+            infoEfectivo.style.display = 'none';
+            infoTrans.style.display = 'none';
+        } catch (error) {
+            alert("Hubo un error al enviar. Intenta de nuevo.");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Confirmar Compra";
+        }
+    });
+
+    obtenerTasa();
+</script>
+
+</body>
+</html>
