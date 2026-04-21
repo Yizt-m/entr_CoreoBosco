@@ -57,7 +57,7 @@
         </div>
 
         <div class="form-group">
-            <label>Cantidad de Entradas</label>
+            <label>Cantidad de Entradas <span id="txtDisponibles" style="color: red; font-size: 0.8em;"></span></label>
             <input type="number" id="cantidad" min="1" value="1" required>
             <small style="color: #666;">Promo: 1x2$ o 3x5$</small>
         </div>
@@ -95,9 +95,10 @@
 </div>
 
 <script>
-    // --- CONFIGURACIÓN ---
-    const APP_URL = "https://script.google.com/macros/s/AKfycbxYFon5DcqxpLKmGWTBc97hkNBDmEvmaFTEsQonxEPxs-ZYHXeY-8HDb1lbHNrSTP8E3A/exec"; // <--- PEGA TU URL AQUÍ
+// --- CONFIGURACIÓN ---
+    const APP_URL = "https://script.google.com/macros/s/AKfycbxYFon5DcqxpLKmGWTBc97hkNBDmEvmaFTEsQonxEPxs-ZYHXeY-8HDb1lbHNrSTP8E3A/exec"; // <--- NO OLVIDES PEGAR TU URL
     let tasaDelDia = 0;
+    let entradasDisponibles = 0;
 
     const form = document.getElementById('registroForm');
     const inputCant = document.getElementById('cantidad');
@@ -105,24 +106,49 @@
     const infoEfectivo = document.getElementById('infoEfectivo');
     const infoTrans = document.getElementById('infoTransferencia');
     const loader = document.getElementById('loader');
+    const txtDisponibles = document.getElementById('txtDisponibles');
 
-    // 1. Obtener la tasa al cargar
-    async function obtenerTasa() {
+    // 1. Obtener datos iniciales (Tasa e Inventario)
+    async function obtenerDatos() {
         try {
             const response = await fetch(APP_URL);
             const data = await response.json();
             tasaDelDia = data.tasa;
+            entradasDisponibles = data.disponibles;
+            
             loader.style.display = 'none';
+
+            // Validar si está Agotado
+            if (entradasDisponibles <= 0) {
+                document.querySelector('.container').innerHTML = `
+                    <h2 style="color: red;">¡AGOTADO!</h2>
+                    <p style="text-align: center;">Las entradas para el Coreo Bosco se han agotado.</p>
+                `;
+                return; // Detenemos el script aquí
+            }
+
+            // Si hay entradas, configuramos el formulario
+            txtDisponibles.innerText = `(Quedan ${entradasDisponibles})`;
+            inputCant.max = entradasDisponibles; // Evita que pongan un número mayor
+            
             form.style.display = 'block';
             calcular();
         } catch (e) {
-            alert("Error al conectar con la base de datos. Verifica la URL del Script.");
+            alert("Error al conectar con la base de datos.");
         }
     }
 
     // 2. Lógica de cálculo (3 x 5$)
     function calcular() {
-        const cant = parseInt(inputCant.value) || 0;
+        let cant = parseInt(inputCant.value) || 0;
+        
+        // Validación en tiempo real para el cliente
+        if (cant > entradasDisponibles) {
+            alert(`Solo nos quedan ${entradasDisponibles} entradas disponibles.`);
+            inputCant.value = entradasDisponibles;
+            cant = entradasDisponibles;
+        }
+
         const promos = Math.floor(cant / 3);
         const individuales = cant % 3;
         
@@ -147,6 +173,13 @@
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('btnEnviar');
+        
+        // Última validación frontend
+        if (parseInt(inputCant.value) > entradasDisponibles) {
+            alert(`Solo puedes comprar hasta ${entradasDisponibles} entradas.`);
+            return;
+        }
+
         btn.disabled = true;
         btn.innerText = "Enviando...";
 
@@ -165,25 +198,24 @@
         try {
             await fetch(APP_URL, {
                 method: 'POST',
-                mode: 'no-cors', // Importante para Apps Script
+                mode: 'no-cors', 
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(datos)
             });
             
-            alert("¡Registro exitoso! Nos vemos en el Coreo Bosco.");
-            form.reset();
-            calcular();
-            infoEfectivo.style.display = 'none';
-            infoTrans.style.display = 'none';
+            // Nota: Con 'no-cors' no podemos leer la respuesta del servidor si hubo error de sobreventa.
+            // Pero al recargar la página, actualizará los cupos reales.
+            alert("¡Registro enviado! Nos vemos en el Coreo Bosco.");
+            window.location.reload(); // Recarga la página para refrescar los cupos disponibles
+            
         } catch (error) {
             alert("Hubo un error al enviar. Intenta de nuevo.");
-        } finally {
             btn.disabled = false;
             btn.innerText = "Confirmar Compra";
         }
     });
 
-    obtenerTasa();
+    obtenerDatos();
 </script>
 
 </body>
