@@ -110,20 +110,21 @@
         const btnSiguiente = document.getElementById('btnEscanear');
 
         btnMarcar.disabled = true;
-        btnMarcar.innerText = "⏳ Conectando con Google Sheets...";
+        btnMarcar.innerText = "⏳ Validando en servidor...";
 
         try {
-            const response = await fetch(APP_URL, {
-                method: 'POST',
-                // Se usa text/plain en lugar de application/json para que Google no bloquee la lectura de la respuesta por CORS
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    action: 'marcar_usado', 
-                    qrData: qrDataActual
-                })
+            // Empaquetamos los datos en la URL para evitar el bloqueo CORS
+            const params = new URLSearchParams({
+                action: 'marcar_usado',
+                fila: qrDataActual.Fila,
+                nombre: qrDataActual.Nombre
             });
 
-            // Leer la respuesta real del servidor
+            // Usamos GET con los parámetros adjuntos
+            const response = await fetch(APP_URL + "?" + params.toString(), {
+                method: 'GET'
+            });
+
             const result = await response.json();
 
             if (result.status === "success") {
@@ -139,7 +140,8 @@
             btnSiguiente.style.display = 'block'; 
 
         } catch (error) {
-            alert("Error de red. Verifica tu conexión a internet.");
+            console.error("Error capturado:", error);
+            alert("Sigue habiendo un error de conexión. Revisa la consola para más detalles.");
             btnMarcar.disabled = false;
             btnMarcar.innerText = "🎟️ Marcar Entrada como Usada";
         }
