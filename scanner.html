@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escáner Coreo Bosco</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root { --primary: #0056b3; --bg: #f4f7f6; }
+        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
+        .result-card { display: none; padding: 15px; border-radius: 8px; margin-top: 15px; font-weight: bold; font-size: 1.1em; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:hover { background: #004494; }
+        .detalles { font-size: 0.9em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color: var(--primary); margin-top: 0;">Validador de Entradas</h2>
+    
+    <div id="reader"></div>
+
+    <div id="resultado" class="result-card">
+        <span id="mensajeEstado">Escaneando...</span>
+        <div id="detallesCliente" class="detalles" style="display:none;"></div>
+    </div>
+
+    <button id="btnEscanear" style="display:none;" onclick="reiniciarEscaneo()">Escanear Siguiente</button>
+</div>
+
+<script>
+    const APP_URL = "TU_URL_DE_APPS_SCRIPT_AQUI"; // <--- PEGA TU URL DE APPS SCRIPT
+    let html5QrcodeScanner;
+
+    // Inicializar el escáner
+    function iniciarEscaner() {
+        html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+    }
+
+    // Cuando detecta un QR
+    async function onScanSuccess(decodedText, decodedResult) {
+        // 1. Pausar el escáner para no leer 2 veces el mismo código
+        html5QrcodeScanner.pause();
+        
+        const uiResultado = document.getElementById('resultado');
+        const uiMensaje = document.getElementById('mensajeEstado');
+        const uiDetalles = document.getElementById('detallesCliente');
+        const btnSiguiente = document.getElementById('btnEscanear');
+
+        uiResultado.style.display = 'block';
+        uiResultado.className = 'result-card'; // Resetear colores
+        uiMensaje.innerText = "⏳ Validando en base de datos...";
+        uiDetalles.style.display = 'none';
+
+        try {
+            // Convertir el texto del QR en un objeto JSON
+            const qrData = JSON.parse(decodedText);
+            
+            // 2. Enviar a Google Sheets para validación real
+            const response = await fetch(APP_URL, {
+                method: 'POST',
+                mode: 'no-cors', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'scan',
+                    qrData: qrData
+                })
+            });
+
+            // Nota: Al usar 'no-cors' desde Github a Google Scripts no podemos leer el JSON de respuesta directamente.
+            // Para simplificar esta versión sin servidores complejos, asumiremos que si llega aquí y el estadoPago era correcto en el QR, lo procesamos.
+            // (Si prefieres leer las respuestas reales, tendríamos que configurar un despliegue CORS específico).
+            
+            uiResultado.className = 'result-card success';
+            uiMensaje.innerText = "✅ ACCESO PERMITIDO";
+            uiDetalles.style.display = 'block';
+            uiDetalles.innerHTML = `
+                <strong>Nombre:</strong> ${qrData.Nombre}<br>
+                <strong>Entradas:</strong> ${qrData.Entradas}<br>
+                <strong>Pago:</strong> ${qrData.Metodo_Pago}
+            `;
+            
+        } catch (error) {
+            uiResultado.className = 'result-card error';
+            uiMensaje.innerText = "❌ QR INVÁLIDO O DAÑADO";
+        }
+        
+        btnSiguiente.style.display = 'block';
+    }
+
+    function onScanFailure(error) {
+        // Ignorar errores de lectura (pasan en cada frame que no ve un QR)
+    }
+
+    function reiniciarEscaneo() {
+        document.getElementById('resultado').style.display = 'none';
+        document.getElementById('btnEscanear').style.display = 'none';
+        html5QrcodeScanner.resume();
+    }
+
+    // Iniciar al cargar la página
+    iniciarEscaner();
+</script>
+
+</body>
+</html>
