@@ -119,11 +119,21 @@
 
     // 1. Obtener datos iniciales (Tasa e Inventario)
     async function obtenerDatos() {
+        // Intenta cargar la tasa de la memoria del navegador si existe para hacer un cálculo preliminar
+        const cacheGuardado = localStorage.getItem('coreobosco_tasa');
+        if (cacheGuardado) {
+            tasaDelDia = JSON.parse(cacheGuardado).tasa;
+        }
+
         try {
+            // Consultamos siempre las entradas disponibles para evitar sobreventa
             const response = await fetch(APP_URL);
             const data = await response.json();
+            
+            // Actualizamos la tasa con la real y la guardamos en caché
             tasaDelDia = data.tasa;
             entradasDisponibles = data.disponibles;
+            localStorage.setItem('coreobosco_tasa', JSON.stringify({tasa: tasaDelDia}));
             
             loader.style.display = 'none';
 
@@ -133,15 +143,14 @@
                     <h2 style="color: red;">¡AGOTADO!</h2>
                     <p style="text-align: center;">Las entradas para el Coreo Bosco se han agotado.</p>
                 `;
-                return; // Detenemos el script aquí
+                return;
             }
 
-            // Si hay entradas, configuramos el formulario
             txtDisponibles.innerText = `(Quedan ${entradasDisponibles})`;
-            inputCant.max = entradasDisponibles; // Evita que pongan un número mayor
+            inputCant.max = entradasDisponibles;
             
             form.style.display = 'block';
-            calcular();
+            calcular(); // Refresca los montos
         } catch (e) {
             alert("Error al conectar con la base de datos.");
         }
