@@ -3,33 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Escáner Coreo Bosco</title>
+    <title>Escáner Coreo Bosco - Control de Caja</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --primary: #0056b3; --success: #28a745; --bg: #f4f7f6; }
-        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        :root { --primary: #0056b3; --success: #28a745; --bg: #f4f7f6; --warning: #ffc107; --danger: #dc3545;}
+        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; box-sizing: border-box; }
         #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
         
-        .result-card { display: none; padding: 15px; border-radius: 8px; margin-top: 15px; font-weight: bold; font-size: 1.1em; }
+        .result-card { display: none; padding: 15px; border-radius: 8px; margin-top: 15px; font-weight: bold; font-size: 1em; }
         .info { background: #eef7ff; color: #004085; border: 1px solid #b8daff; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         
         button { padding: 12px 20px; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.3s; }
         .btn-blue { background: var(--primary); }
-        .btn-blue:hover { background: #004494; }
-        .btn-green { background: var(--success); font-weight: bold; font-size: 18px; }
-        .btn-green:hover { background: #218838; }
+        .btn-green { background: var(--success); font-weight: bold; }
+        .btn-warning { background: var(--warning); color: black; font-weight: bold; }
         button:disabled { background: #ccc; cursor: not-allowed; }
         
-        .detalles { font-size: 0.95em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 12px; border-radius: 5px; line-height: 1.5; }
+        .detalles { font-size: 0.9em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 12px; border-radius: 5px; line-height: 1.5; }
+        
+        /* Estilos del Módulo de Caja */
+        .caja-panel { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; display: none; }
+        .caja-panel h3 { margin-top: 0; color: var(--primary); font-size: 1.1em; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .form-group { margin-bottom: 10px; }
+        label { display: block; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: #333; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .resumen-caja { background: #fff3cd; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.95em; }
+        .vuelto-panel { background: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; border-radius: 5px; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2 style="color: var(--primary); margin-top: 0;">Control de Puerta</h2>
+    <h2 style="color: var(--primary); margin-top: 0;">Control de Puerta y Caja</h2>
+    <div id="loaderTasa" style="font-size: 0.9em; color: gray; margin-bottom: 10px;">Obteniendo tasa del día...</div>
     
     <div id="reader"></div>
 
@@ -38,20 +47,94 @@
         <div id="detallesCliente" class="detalles" style="display:none;"></div>
     </div>
 
-    <button id="btnMarcarUsado" class="btn-green" style="display:none;" onclick="procesarUsoTicket()">🎟️ Marcar Entrada como Usada</button>
-    <button id="btnEscanear" class="btn-blue" style="display:none;" onclick="reiniciarEscaneo()">Escanear Siguiente Ticket</button>
+    <div id="panelCaja" class="caja-panel">
+        <h3>💰 Cobro en Puerta</h3>
+        <p style="margin: 5px 0; font-size: 0.95em;">Debe cobrar: <strong><span id="txtCobrarUSD">0</span>$</strong> (Ref: <span id="txtCobrarBS">0</span> Bs)</p>
+        
+        <div class="form-group">
+            <label>¿Cómo está pagando el cliente ahora?</label>
+            <select id="tipoIngreso" onchange="configurarFormularioCaja()">
+                <option value="">Seleccione...</option>
+                <option value="USD">Efectivo USD</option>
+                <option value="BS">Efectivo Bs</option>
+                <option value="PM">Pago Móvil</option>
+                <option value="Mixto">Mixto (Varias formas)</option>
+            </select>
+        </div>
+
+        <div id="inputsPago" style="display:none;">
+            <div class="form-group" id="divPagoUSD" style="display:none;">
+                <label>Monto entregado en USD ($):</label>
+                <input type="number" id="inUSD" placeholder="Ej: 10" step="1" oninput="calcularCaja()">
+            </div>
+            <div class="form-group" id="divPagoBS" style="display:none;">
+                <label>Monto entregado en Bs:</label>
+                <input type="number" id="inBS" placeholder="Ej: 360" step="0.01" oninput="calcularCaja()">
+            </div>
+            <div id="divPagoPM" style="display:none;">
+                <div class="form-group">
+                    <label>Monto Transferido en PM (Bs):</label>
+                    <input type="number" id="inPM" placeholder="Ej: 360" step="0.01" oninput="calcularCaja()">
+                </div>
+                <div class="form-group">
+                    <label>Referencia PM:</label>
+                    <input type="text" id="refPM" placeholder="Últimos 4/6 dígitos">
+                </div>
+            </div>
+
+            <div class="resumen-caja" id="resumenCalculo">
+                Esperando montos...
+            </div>
+        </div>
+
+        <div id="panelVuelto" class="vuelto-panel">
+            <h4 style="margin:0 0 10px 0; color: #0c5460;">Dar Vuelto de: <span id="txtMontoVuelto">0</span>$</h4>
+            <div class="form-group">
+                <label>¿Cómo se entrega el vuelto?</label>
+                <select id="tipoVuelto" onchange="configurarVuelto()">
+                    <option value="USD">En Efectivo USD</option>
+                    <option value="PM">Por Pago Móvil</option>
+                </select>
+            </div>
+            <div id="divVueltoPM" style="display:none;">
+                <input type="text" id="vCedula" placeholder="Cédula" class="form-group">
+                <input type="tel" id="vTelefono" placeholder="Teléfono" class="form-group">
+                <input type="text" id="vBanco" placeholder="Banco (Ej: BNC)" class="form-group">
+            </div>
+        </div>
+    </div>
+
+    <button id="btnMarcarUsado" class="btn-green" style="display:none;" onclick="procesarUsoTicket()">🎟️ Validar y Marcar Usado</button>
+    <button id="btnEscanear" class="btn-blue" style="display:none;" onclick="reiniciarEscaneo()">Escanear Siguiente</button>
 </div>
 
 <script>
-    const APP_URL = "https://script.google.com/macros/s/AKfycbxYFon5DcqxpLKmGWTBc97hkNBDmEvmaFTEsQonxEPxs-ZYHXeY-8HDb1lbHNrSTP8E3A/exec"; // <--- PEGA TU URL DE APPS SCRIPT AQUÍ
+    const APP_URL = "https://script.google.com/macros/s/AKfycbxYFon5DcqxpLKmGWTBc97hkNBDmEvmaFTEsQonxEPxs-ZYHXeY-8HDb1lbHNrSTP8E3A/exec";
     let html5QrcodeScanner;
     let qrDataActual = null; 
+    let tasaDelDia = 0;
+    let vueltoActualUSD = 0;
 
+    // 1. OBTENER LA TASA AL INICIAR
+    async function obtenerTasa() {
+        try {
+            const response = await fetch(APP_URL);
+            const data = await response.json();
+            tasaDelDia = data.tasa;
+            document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs`;
+        } catch (e) {
+            document.getElementById('loaderTasa').innerText = "⚠️ Error obteniendo tasa. Avise a administración.";
+            document.getElementById('loaderTasa').style.color = "red";
+        }
+    }
+
+    // 2. INICIAR ESCÁNER
     function iniciarEscaner() {
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
         html5QrcodeScanner.render(onScanSuccess, onScanFailure);
     }
 
+    // 3. PROCESAR QR ESCANEADO
     function onScanSuccess(decodedText, decodedResult) {
         html5QrcodeScanner.pause(); 
         
@@ -60,99 +143,232 @@
         const uiDetalles = document.getElementById('detallesCliente');
         const btnMarcar = document.getElementById('btnMarcarUsado');
         const btnSiguiente = document.getElementById('btnEscanear');
+        const panelCaja = document.getElementById('panelCaja');
 
         try {
             qrDataActual = JSON.parse(decodedText);
             
+            // VALIDACIÓN 1: ¿Ya está usado?
+            if (qrDataActual.Uso_Ticket === "Usado") {
+                uiResultado.className = 'result-card error';
+                uiMensaje.innerText = "❌ ALERTA: TICKET YA FUE USADO";
+                uiResultado.style.display = 'block';
+                btnSiguiente.style.display = 'block';
+                return;
+            }
+
+            // VALIDACIÓN 2: Estado del Pago General
             if (qrDataActual.Estado_Pago !== "Correcto" && qrDataActual.Estado_Pago !== "Validado") {
                 uiResultado.className = 'result-card error';
-                uiMensaje.innerText = "⚠️ ADVERTENCIA: PAGO NO VALIDADO";
+                uiMensaje.innerText = "⚠️ ADVERTENCIA: PAGO NO VALIDADO EN SISTEMA";
                 uiResultado.style.display = 'block';
                 btnSiguiente.style.display = 'block';
                 return; 
             }
 
-            // Mostrar TODOS los datos leídos
+            // Si pasa validaciones, mostrar info
             uiResultado.className = 'result-card info';
-            uiMensaje.innerText = "Ticket Identificado";
+            uiMensaje.innerText = "Ticket Válido";
             uiDetalles.style.display = 'block';
             uiDetalles.innerHTML = `
                 <strong>👤 Titular:</strong> ${qrDataActual.Nombre}<br>
                 <strong>🎟️ N° Entradas:</strong> ${qrDataActual.Entradas}<br>
-                <strong>💵 Método:</strong> ${qrDataActual.Metodo_Pago}<br>
-                <strong>✅ Estado:</strong> ${qrDataActual.Uso_Ticket}<br>
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
-                <span style="font-size: 0.8em; color: gray;">ID Fila Sheet: ${qrDataActual.Fila || 'NO DEFINIDA (QR Antiguo)'}</span>
+                <strong>💵 Método Registrado:</strong> ${qrDataActual.Metodo_Pago}<br>
+                <strong>Deuda/Monto:</strong> ${qrDataActual.Monto_USD}$<br>
+                <span style="font-size: 0.8em; color: gray;">Fila: ${qrDataActual.Fila}</span>
             `;
-            
             uiResultado.style.display = 'block';
-            
-            // Si es un QR viejo sin fila, no mostrar el botón verde para evitar errores
-            if(qrDataActual.Fila) {
-                btnMarcar.style.display = 'block'; 
-            } else {
-                alert("Este QR es antiguo y no contiene el ID de fila. Debe regenerarse en la base de datos.");
+
+            // VALIDACIÓN 3: Lógica según método de pago
+            if (!qrDataActual.Fila) {
+                alert("Este QR es antiguo (sin Fila). No se puede procesar.");
                 btnSiguiente.style.display = 'block';
+            } else if (qrDataActual.Metodo_Pago === "Transferencia" || qrDataActual.Metodo_Pago === "Pago Móvil") {
+                // Flujo normal (1.1)
+                btnMarcar.style.display = 'block';
+            } else if (qrDataActual.Metodo_Pago === "Efectivo") {
+                // Flujo Extendido Efectivo (1.2)
+                if(tasaDelDia === 0) {
+                    alert("Aún no se ha cargado la tasa del día. Espere un momento e intente de nuevo.");
+                    reiniciarEscaneo();
+                    return;
+                }
+                prepararPanelCaja();
             }
 
         } catch (error) {
             uiResultado.style.display = 'block';
             uiResultado.className = 'result-card error';
-            uiMensaje.innerText = "❌ QR INVÁLIDO O DAÑADO";
+            uiMensaje.innerText = "❌ QR INVÁLIDO";
             btnSiguiente.style.display = 'block';
         }
     }
 
+    // 4. LÓGICA DEL PANEL DE CAJA (EFECTIVO)
+    function prepararPanelCaja() {
+        document.getElementById('panelCaja').style.display = 'block';
+        document.getElementById('txtCobrarUSD').innerText = qrDataActual.Monto_USD;
+        document.getElementById('txtCobrarBS').innerText = (qrDataActual.Monto_USD * tasaDelDia).toFixed(2);
+        
+        // Resetear formulario
+        document.getElementById('tipoIngreso').value = "";
+        document.getElementById('inputsPago').style.display = 'none';
+        document.getElementById('panelVuelto').style.display = 'none';
+        document.getElementById('btnMarcarUsado').style.display = 'none'; // Se oculta hasta que las cuentas cuadren
+    }
+
+    function configurarFormularioCaja() {
+        const tipo = document.getElementById('tipoIngreso').value;
+        const panel = document.getElementById('inputsPago');
+        const dUSD = document.getElementById('divPagoUSD');
+        const dBS = document.getElementById('divPagoBS');
+        const dPM = document.getElementById('divPagoPM');
+
+        // Resetear inputs
+        document.getElementById('inUSD').value = "";
+        document.getElementById('inBS').value = "";
+        document.getElementById('inPM').value = "";
+        document.getElementById('refPM').value = "";
+        document.getElementById('panelVuelto').style.display = 'none';
+        document.getElementById('btnMarcarUsado').style.display = 'none';
+        
+        if (!tipo) { panel.style.display = 'none'; return; }
+        panel.style.display = 'block';
+        
+        dUSD.style.display = (tipo === 'USD' || tipo === 'Mixto') ? 'block' : 'none';
+        dBS.style.display = (tipo === 'BS' || tipo === 'Mixto') ? 'block' : 'none';
+        dPM.style.display = (tipo === 'PM' || tipo === 'Mixto') ? 'block' : 'none';
+        
+        calcularCaja();
+    }
+
+    function calcularCaja() {
+        const requeridoUSD = parseFloat(qrDataActual.Monto_USD) || 0;
+        
+        let inUSD = parseFloat(document.getElementById('inUSD').value) || 0;
+        let inBS = parseFloat(document.getElementById('inBS').value) || 0;
+        let inPM = parseFloat(document.getElementById('inPM').value) || 0;
+
+        // Convertir todo a USD para comparar
+        let bsEnUSD = inBS / tasaDelDia;
+        let pmEnUSD = inPM / tasaDelDia;
+        let totalRecibidoUSD = inUSD + bsEnUSD + pmEnUSD;
+
+        let diferenciaUSD = totalRecibidoUSD - requeridoUSD;
+        const resumen = document.getElementById('resumenCalculo');
+        const panelVuelto = document.getElementById('panelVuelto');
+        const btnMarcar = document.getElementById('btnMarcarUsado');
+
+        // Limite de tolerancia por decimales de bs (0.05 centavos)
+        if (Math.abs(diferenciaUSD) < 0.05) { diferenciaUSD = 0; }
+
+        if (totalRecibidoUSD === 0) {
+            resumen.innerHTML = "Esperando montos...";
+            panelVuelto.style.display = 'none';
+            btnMarcar.style.display = 'none';
+            return;
+        }
+
+        if (diferenciaUSD < 0) {
+            let falta = Math.abs(diferenciaUSD);
+            resumen.innerHTML = `<span style="color:red">Faltan: ${falta.toFixed(2)}$ (Ref: ${(falta*tasaDelDia).toFixed(2)} Bs)</span>`;
+            panelVuelto.style.display = 'none';
+            btnMarcar.style.display = 'none'; // No puede validar si falta plata
+        } else if (diferenciaUSD > 0) {
+            vueltoActualUSD = diferenciaUSD;
+            resumen.innerHTML = `<span style="color:green">Pago completo. Hay un excedente.</span>`;
+            panelVuelto.style.display = 'block';
+            document.getElementById('txtMontoVuelto').innerText = vueltoActualUSD.toFixed(2);
+            btnMarcar.style.display = 'block'; // Habilitar botón
+            configurarVuelto();
+        } else {
+            vueltoActualUSD = 0;
+            resumen.innerHTML = `<span style="color:green; font-weight:bold;">¡Pago Exacto Cuadrado! ✅</span>`;
+            panelVuelto.style.display = 'none';
+            btnMarcar.style.display = 'block'; // Habilitar botón
+        }
+    }
+
+    function configurarVuelto() {
+        const tipoV = document.getElementById('tipoVuelto').value;
+        document.getElementById('divVueltoPM').style.display = (tipoV === 'PM') ? 'block' : 'none';
+    }
+
+    // 5. ENVIAR DATOS A GOOGLE SHEETS
     async function procesarUsoTicket() {
         const btnMarcar = document.getElementById('btnMarcarUsado');
         const uiResultado = document.getElementById('resultado');
         const uiMensaje = document.getElementById('mensajeEstado');
         const btnSiguiente = document.getElementById('btnEscanear');
 
+        // Construir objeto de caja si era pago en efectivo
+        let datosCaja = null;
+        if (qrDataActual.Metodo_Pago === "Efectivo") {
+            const tipo = document.getElementById('tipoIngreso').value;
+            // Validaciones finales de caja
+            if(tipo === 'PM' || tipo === 'Mixto'){
+                if(document.getElementById('inPM').value > 0 && document.getElementById('refPM').value.trim() === ""){
+                    alert("Debe ingresar la referencia del Pago Móvil recibido."); return;
+                }
+            }
+            if(vueltoActualUSD > 0 && document.getElementById('tipoVuelto').value === 'PM'){
+                if(!document.getElementById('vCedula').value || !document.getElementById('vTelefono').value || !document.getElementById('vBanco').value){
+                    alert("Debe completar todos los datos para realizar el vuelto por Pago Móvil."); return;
+                }
+            }
+
+            datosCaja = {
+                tipoIngreso: tipo,
+                usdRecibido: document.getElementById('inUSD').value || 0,
+                bsRecibido: document.getElementById('inBS').value || 0,
+                pmRecibido: document.getElementById('inPM').value || 0,
+                pmReferencia: document.getElementById('refPM').value || "N/A",
+                hayVuelto: vueltoActualUSD > 0,
+                vueltoUSD: vueltoActualUSD,
+                metodoVuelto: document.getElementById('tipoVuelto').value,
+                vueltoCedula: document.getElementById('vCedula').value || "N/A",
+                vueltoTelefono: document.getElementById('vTelefono').value || "N/A",
+                vueltoBanco: document.getElementById('vBanco').value || "N/A"
+            };
+        }
+
         btnMarcar.disabled = true;
-        btnMarcar.innerText = "⏳ Conectando con la base de datos...";
+        btnMarcar.innerText = "⏳ Guardando datos y validando...";
 
         try {
             const response = await fetch(APP_URL, {
                 method: 'POST',
-                // IMPORTANTE: Usamos text/plain sin 'no-cors' para esquivar el bloqueo de seguridad y poder leer la respuesta
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
                     action: 'marcar_usado',
-                    qrData: qrDataActual
+                    qrData: qrDataActual,
+                    caja: datosCaja // Aquí enviamos la nueva data
                 })
             });
 
-            // Leemos la respuesta como texto crudo primero. Así, si Google lanza un error raro, no colapsa.
             const textoRespuesta = await response.text();
-
             try {
-                // Intentamos convertir ese texto a los datos JSON que esperamos
                 const result = JSON.parse(textoRespuesta);
-                
                 if (result.status === "success") {
                     uiResultado.className = 'result-card success';
-                    uiMensaje.innerText = "✅ " + (result.message || "Acceso permitido.");
+                    uiMensaje.innerText = "✅ Guardado. Acceso Permitido.";
+                    document.getElementById('panelCaja').style.display = 'none';
                 } else {
                     uiResultado.className = 'result-card error';
                     uiMensaje.innerText = "❌ " + result.message;
                 }
-                
                 btnMarcar.style.display = 'none'; 
                 btnSiguiente.style.display = 'block'; 
 
             } catch (jsonError) {
-                // Si entra aquí, significa que Google bloqueó la petición o devolvió una página web de error.
-                alert("Error en Google Apps Script. Revisa que hayas publicado la 'Nueva Versión'.");
+                alert("Error procesando respuesta del servidor. Revisa Google Sheets.");
                 btnMarcar.disabled = false;
                 btnMarcar.innerText = "🎟️ Reintentar";
             }
-
         } catch (error) {
-            // AHORA SÍ veremos el motivo real en la pantalla de tu teléfono
-            alert("Error del navegador: " + error.message);
+            alert("Error de conexión: " + error.message);
             btnMarcar.disabled = false;
-            btnMarcar.innerText = "🎟️ Marcar Entrada como Usada";
+            btnMarcar.innerText = "🎟️ Validar y Marcar Usado";
         }
     }
 
@@ -162,11 +378,14 @@
         document.getElementById('resultado').style.display = 'none';
         document.getElementById('btnMarcarUsado').style.display = 'none';
         document.getElementById('btnEscanear').style.display = 'none';
+        document.getElementById('panelCaja').style.display = 'none';
         qrDataActual = null;
+        vueltoActualUSD = 0;
         html5QrcodeScanner.resume(); 
     }
 
-    iniciarEscaner();
+    // Inicializar
+    obtenerTasa().then(iniciarEscaner);
 </script>
 
 </body>
