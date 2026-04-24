@@ -20,7 +20,7 @@
         .btn-blue { background: var(--primary); }
         .btn-green { background: var(--success); font-weight: bold; }
         .btn-warning { background: var(--warning); color: black; font-weight: bold; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:disabled { background: #ccc; cursor: not-allowed; opacity: 0.7; }
         
         .detalles { font-size: 0.9em; font-weight: normal; margin-top: 10px; text-align: left; background: white; padding: 12px; border-radius: 5px; line-height: 1.5; }
         
@@ -46,6 +46,8 @@
         <span id="mensajeEstado">Escaneando...</span>
         <div id="detallesCliente" class="detalles" style="display:none;"></div>
     </div>
+
+    <button id="btnVerificar" class="btn-warning" style="display:none;" onclick="verificarEnSistema()">🔍 1. Verificar Estado en Sistema</button>
 
     <div id="panelCaja" class="caja-panel">
         <h3>💰 Cobro en Puerta</h3>
@@ -104,7 +106,8 @@
         </div>
     </div>
 
-    <button id="btnMarcarUsado" class="btn-green" style="display:none;" onclick="procesarUsoTicket()">🎟️ Validar y Marcar Usado</button>
+    <button id="btnMarcarUsado" class="btn-green" style="display:none;" onclick="procesarUsoTicket()">🎟️ 2. Validar y Permitir Acceso</button>
+    
     <button id="btnEscanear" class="btn-blue" style="display:none;" onclick="reiniciarEscaneo()">Escanear Siguiente</button>
 </div>
 
@@ -115,40 +118,31 @@
     let tasaDelDia = 0;
     let vueltoActualUSD = 0;
 
-    // 1. OBTENER LA TASA AL INICIAR
+    // 1. OBTENER LA TASA AL INICIAR (CON CACHÉ)
     async function obtenerTasa() {
         const cacheName = 'coreobosco_tasa_caja';
-        const tiempoExpiracion = 2 * 60 * 60 * 1000; // La tasa se guarda por 2 horas (en milisegundos)
+        const tiempoExpiracion = 2 * 60 * 60 * 1000; 
         
-        // Revisamos si ya tenemos la tasa guardada en el teléfono/PC
         const cacheGuardado = localStorage.getItem(cacheName);
         if (cacheGuardado) {
             const datosCache = JSON.parse(cacheGuardado);
             const ahora = new Date().getTime();
-            
-            // Si no han pasado 2 horas, usamos la memoria (Es instantáneo)
             if (ahora - datosCache.timestamp < tiempoExpiracion) {
                 tasaDelDia = datosCache.tasa;
-                document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs (Cargado rápido)`;
+                document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs (Carga Rápida)`;
                 return; 
             }
         }
 
-        // Si no hay memoria o ya pasaron 2 horas, consultamos a Google
         try {
             const response = await fetch(APP_URL);
             const data = await response.json();
             tasaDelDia = data.tasa;
             
-            // Guardamos la nueva tasa en la memoria del teléfono
-            localStorage.setItem(cacheName, JSON.stringify({
-                tasa: tasaDelDia,
-                timestamp: new Date().getTime()
-            }));
-            
+            localStorage.setItem(cacheName, JSON.stringify({ tasa: tasaDelDia, timestamp: new Date().getTime() }));
             document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs`;
         } catch (e) {
-            document.getElementById('loaderTasa').innerText = "⚠️ Error obteniendo tasa. Avise a administración.";
+            document.getElementById('loaderTasa').innerText = "⚠️ Error obteniendo tasa.";
             document.getElementById('loaderTasa').style.color = "red";
         }
     }
@@ -159,41 +153,31 @@
         html5QrcodeScanner.render(onScanSuccess, onScanFailure);
     }
 
-    // 3. PROCESAR QR ESCANEADO
+    // 3. PROCESAR QR ESCANEADO LOCALMENTE
     function onScanSuccess(decodedText, decodedResult) {
         html5QrcodeScanner.pause(); 
         
         const uiResultado = document.getElementById('resultado');
         const uiMensaje = document.getElementById('mensajeEstado');
         const uiDetalles = document.getElementById('detallesCliente');
-        const btnMarcar = document.getElementById('btnMarcarUsado');
         const btnSiguiente = document.getElementById('btnEscanear');
-        const panelCaja = document.getElementById('panelCaja');
+        const btnVerificar = document.getElementById('btnVerificar');
 
         try {
             qrDataActual = JSON.parse(decodedText);
             
-            // VALIDACIÓN 1: ¿Ya está usado?
+            // Verificación Rápida Local (Si el propio QR dice que ya fue usado)
             if (qrDataActual.Uso_Ticket === "Usado") {
                 uiResultado.className = 'result-card error';
-                uiMensaje.innerText = "❌ ALERTA: TICKET YA FUE USADO";
+                uiMensaje.innerText = "❌ ALERTA: QR VIEJO, TICKET YA FUE USADO";
                 uiResultado.style.display = 'block';
                 btnSiguiente.style.display = 'block';
                 return;
             }
 
-            // VALIDACIÓN 2: Estado del Pago General
-            if (qrDataActual.Estado_Pago !== "Correcto" && qrDataActual.Estado_Pago !== "Validado") {
-                uiResultado.className = 'result-card error';
-                uiMensaje.innerText = "⚠️ ADVERTENCIA: PAGO NO VALIDADO EN SISTEMA";
-                uiResultado.style.display = 'block';
-                btnSiguiente.style.display = 'block';
-                return; 
-            }
-
-            // Si pasa validaciones, mostrar info
+            // Mostrar info
             uiResultado.className = 'result-card info';
-            uiMensaje.innerText = "Ticket Válido";
+            uiMensaje.innerText = "Información del Ticket";
             uiDetalles.style.display = 'block';
             uiDetalles.innerHTML = `
                 <strong>👤 Titular:</strong> ${qrDataActual.Nombre}<br>
@@ -204,52 +188,88 @@
             `;
             uiResultado.style.display = 'block';
 
-            // VALIDACIÓN 3: Lógica según método de pago
             if (!qrDataActual.Fila) {
                 alert("Este QR es antiguo (sin Fila). No se puede procesar.");
                 btnSiguiente.style.display = 'block';
-            } else if (qrDataActual.Metodo_Pago === "Transferencia" || qrDataActual.Metodo_Pago === "Pago Móvil") {
-                // Flujo normal (1.1)
-                btnMarcar.style.display = 'block';
-            } else if (qrDataActual.Metodo_Pago === "Efectivo") {
-                // Flujo Extendido Efectivo (1.2)
-                if(tasaDelDia === 0) {
-                    alert("Aún no se ha cargado la tasa del día. Espere un momento e intente de nuevo.");
-                    reiniciarEscaneo();
-                    return;
-                }
-                prepararPanelCaja();
+            } else {
+                // AQUI ESTÁ LA MAGIA: Obligamos al usuario a verificar en la base de datos primero
+                btnVerificar.style.display = 'block';
             }
 
         } catch (error) {
-            uiResultado.style.display = 'block';
             uiResultado.className = 'result-card error';
             uiMensaje.innerText = "❌ QR INVÁLIDO";
+            uiResultado.style.display = 'block';
             btnSiguiente.style.display = 'block';
         }
     }
 
-    // 4. LÓGICA DEL PANEL DE CAJA (EFECTIVO)
+    // 4. VERIFICAR EN LA BASE DE DATOS (NUEVO PASO)
+    async function verificarEnSistema() {
+        const btnVerificar = document.getElementById('btnVerificar');
+        const uiResultado = document.getElementById('resultado');
+        const uiMensaje = document.getElementById('mensajeEstado');
+        const btnSiguiente = document.getElementById('btnEscanear');
+
+        btnVerificar.disabled = true;
+        btnVerificar.innerText = "⏳ Consultando base de datos...";
+
+        try {
+            const response = await fetch(APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'verificar_estado', qrData: qrDataActual })
+            });
+
+            const result = JSON.parse(await response.text());
+            
+            if (result.status === "success") {
+                // TICKET VÁLIDO EN BD: Ocultamos botón de verificar y procedemos
+                btnVerificar.style.display = 'none';
+                uiMensaje.innerText = "✅ Válido en BD. Proceda al cobro/ingreso.";
+                uiResultado.className = 'result-card success';
+                
+                if (qrDataActual.Metodo_Pago === "Efectivo") {
+                    if(tasaDelDia === 0) {
+                        alert("Aún no se ha cargado la tasa del día.");
+                        reiniciarEscaneo(); return;
+                    }
+                    prepararPanelCaja();
+                } else {
+                    // Si es transferencia/pago móvil, mostramos directo el botón de acceso final
+                    document.getElementById('btnMarcarUsado').style.display = 'block';
+                }
+            } else {
+                // TICKET RECHAZADO POR LA BD (Fue usado o no existe)
+                uiResultado.className = 'result-card error';
+                uiMensaje.innerText = "❌ " + result.message;
+                btnVerificar.style.display = 'none';
+                btnSiguiente.style.display = 'block';
+            }
+
+        } catch (error) {
+            alert("Error consultando el sistema. Intente de nuevo.");
+            btnVerificar.disabled = false;
+            btnVerificar.innerText = "🔍 1. Verificar Estado en Sistema";
+        }
+    }
+
+    // 5. LÓGICA DEL PANEL DE CAJA (EFECTIVO)
     function prepararPanelCaja() {
         document.getElementById('panelCaja').style.display = 'block';
         document.getElementById('txtCobrarUSD').innerText = qrDataActual.Monto_USD;
         document.getElementById('txtCobrarBS').innerText = (qrDataActual.Monto_USD * tasaDelDia).toFixed(2);
         
-        // Resetear formulario
         document.getElementById('tipoIngreso').value = "";
         document.getElementById('inputsPago').style.display = 'none';
         document.getElementById('panelVuelto').style.display = 'none';
-        document.getElementById('btnMarcarUsado').style.display = 'none'; // Se oculta hasta que las cuentas cuadren
+        document.getElementById('btnMarcarUsado').style.display = 'none'; 
     }
 
     function configurarFormularioCaja() {
         const tipo = document.getElementById('tipoIngreso').value;
         const panel = document.getElementById('inputsPago');
-        const dUSD = document.getElementById('divPagoUSD');
-        const dBS = document.getElementById('divPagoBS');
-        const dPM = document.getElementById('divPagoPM');
-
-        // Resetear inputs
+        
         document.getElementById('inUSD').value = "";
         document.getElementById('inBS').value = "";
         document.getElementById('inPM').value = "";
@@ -260,31 +280,26 @@
         if (!tipo) { panel.style.display = 'none'; return; }
         panel.style.display = 'block';
         
-        dUSD.style.display = (tipo === 'USD' || tipo === 'Mixto') ? 'block' : 'none';
-        dBS.style.display = (tipo === 'BS' || tipo === 'Mixto') ? 'block' : 'none';
-        dPM.style.display = (tipo === 'PM' || tipo === 'Mixto') ? 'block' : 'none';
+        document.getElementById('divPagoUSD').style.display = (tipo === 'USD' || tipo === 'Mixto') ? 'block' : 'none';
+        document.getElementById('divPagoBS').style.display = (tipo === 'BS' || tipo === 'Mixto') ? 'block' : 'none';
+        document.getElementById('divPagoPM').style.display = (tipo === 'PM' || tipo === 'Mixto') ? 'block' : 'none';
         
         calcularCaja();
     }
 
     function calcularCaja() {
         const requeridoUSD = parseFloat(qrDataActual.Monto_USD) || 0;
-        
         let inUSD = parseFloat(document.getElementById('inUSD').value) || 0;
         let inBS = parseFloat(document.getElementById('inBS').value) || 0;
         let inPM = parseFloat(document.getElementById('inPM').value) || 0;
 
-        // Convertir todo a USD para comparar
-        let bsEnUSD = inBS / tasaDelDia;
-        let pmEnUSD = inPM / tasaDelDia;
-        let totalRecibidoUSD = inUSD + bsEnUSD + pmEnUSD;
-
+        let totalRecibidoUSD = inUSD + (inBS / tasaDelDia) + (inPM / tasaDelDia);
         let diferenciaUSD = totalRecibidoUSD - requeridoUSD;
+        
         const resumen = document.getElementById('resumenCalculo');
         const panelVuelto = document.getElementById('panelVuelto');
         const btnMarcar = document.getElementById('btnMarcarUsado');
 
-        // Limite de tolerancia por decimales de bs (0.05 centavos)
         if (Math.abs(diferenciaUSD) < 0.05) { diferenciaUSD = 0; }
 
         if (totalRecibidoUSD === 0) {
@@ -295,50 +310,44 @@
         }
 
         if (diferenciaUSD < 0) {
-            let falta = Math.abs(diferenciaUSD);
-            resumen.innerHTML = `<span style="color:red">Faltan: ${falta.toFixed(2)}$ (Ref: ${(falta*tasaDelDia).toFixed(2)} Bs)</span>`;
+            resumen.innerHTML = `<span style="color:red">Faltan: ${Math.abs(diferenciaUSD).toFixed(2)}$</span>`;
             panelVuelto.style.display = 'none';
-            btnMarcar.style.display = 'none'; // No puede validar si falta plata
+            btnMarcar.style.display = 'none'; 
         } else if (diferenciaUSD > 0) {
             vueltoActualUSD = diferenciaUSD;
-            resumen.innerHTML = `<span style="color:green">Pago completo. Hay un excedente.</span>`;
+            resumen.innerHTML = `<span style="color:green">Pago completo. Hay excedente.</span>`;
             panelVuelto.style.display = 'block';
             document.getElementById('txtMontoVuelto').innerText = vueltoActualUSD.toFixed(2);
-            btnMarcar.style.display = 'block'; // Habilitar botón
+            btnMarcar.style.display = 'block'; 
             configurarVuelto();
         } else {
             vueltoActualUSD = 0;
             resumen.innerHTML = `<span style="color:green; font-weight:bold;">¡Pago Exacto Cuadrado! ✅</span>`;
             panelVuelto.style.display = 'none';
-            btnMarcar.style.display = 'block'; // Habilitar botón
+            btnMarcar.style.display = 'block'; 
         }
     }
 
     function configurarVuelto() {
-        const tipoV = document.getElementById('tipoVuelto').value;
-        document.getElementById('divVueltoPM').style.display = (tipoV === 'PM') ? 'block' : 'none';
+        document.getElementById('divVueltoPM').style.display = (document.getElementById('tipoVuelto').value === 'PM') ? 'block' : 'none';
     }
 
-    // 5. ENVIAR DATOS A GOOGLE SHEETS
+    // 6. ENVIAR DATOS FINALES A GOOGLE SHEETS
     async function procesarUsoTicket() {
         const btnMarcar = document.getElementById('btnMarcarUsado');
         const uiResultado = document.getElementById('resultado');
         const uiMensaje = document.getElementById('mensajeEstado');
         const btnSiguiente = document.getElementById('btnEscanear');
 
-        // Construir objeto de caja si era pago en efectivo
         let datosCaja = null;
         if (qrDataActual.Metodo_Pago === "Efectivo") {
             const tipo = document.getElementById('tipoIngreso').value;
-            // Validaciones finales de caja
-            if(tipo === 'PM' || tipo === 'Mixto'){
-                if(document.getElementById('inPM').value > 0 && document.getElementById('refPM').value.trim() === ""){
-                    alert("Debe ingresar la referencia del Pago Móvil recibido."); return;
-                }
+            if((tipo === 'PM' || tipo === 'Mixto') && document.getElementById('inPM').value > 0 && document.getElementById('refPM').value.trim() === ""){
+                alert("Debe ingresar la referencia del Pago Móvil recibido."); return;
             }
             if(vueltoActualUSD > 0 && document.getElementById('tipoVuelto').value === 'PM'){
                 if(!document.getElementById('vCedula').value || !document.getElementById('vTelefono').value || !document.getElementById('vBanco').value){
-                    alert("Debe completar todos los datos para realizar el vuelto por Pago Móvil."); return;
+                    alert("Complete los datos del cliente para el vuelto por Pago Móvil."); return;
                 }
             }
 
@@ -358,42 +367,30 @@
         }
 
         btnMarcar.disabled = true;
-        btnMarcar.innerText = "⏳ Guardando datos y validando...";
+        btnMarcar.innerText = "⏳ Finalizando...";
 
         try {
             const response = await fetch(APP_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    action: 'marcar_usado',
-                    qrData: qrDataActual,
-                    caja: datosCaja // Aquí enviamos la nueva data
-                })
+                body: JSON.stringify({ action: 'marcar_usado', qrData: qrDataActual, caja: datosCaja })
             });
 
-            const textoRespuesta = await response.text();
-            try {
-                const result = JSON.parse(textoRespuesta);
-                if (result.status === "success") {
-                    uiResultado.className = 'result-card success';
-                    uiMensaje.innerText = "✅ Guardado. Acceso Permitido.";
-                    document.getElementById('panelCaja').style.display = 'none';
-                } else {
-                    uiResultado.className = 'result-card error';
-                    uiMensaje.innerText = "❌ " + result.message;
-                }
-                btnMarcar.style.display = 'none'; 
-                btnSiguiente.style.display = 'block'; 
-
-            } catch (jsonError) {
-                alert("Error procesando respuesta del servidor. Revisa Google Sheets.");
-                btnMarcar.disabled = false;
-                btnMarcar.innerText = "🎟️ Reintentar";
+            const result = JSON.parse(await response.text());
+            if (result.status === "success") {
+                uiResultado.className = 'result-card success';
+                uiMensaje.innerText = "✅ ¡Acceso Permitido y Registrado!";
+                document.getElementById('panelCaja').style.display = 'none';
+            } else {
+                uiResultado.className = 'result-card error';
+                uiMensaje.innerText = "❌ " + result.message;
             }
+            btnMarcar.style.display = 'none'; 
+            btnSiguiente.style.display = 'block'; 
         } catch (error) {
             alert("Error de conexión: " + error.message);
             btnMarcar.disabled = false;
-            btnMarcar.innerText = "🎟️ Validar y Marcar Usado";
+            btnMarcar.innerText = "🎟️ 2. Validar y Permitir Acceso";
         }
     }
 
@@ -401,15 +398,14 @@
 
     function reiniciarEscaneo() {
         document.getElementById('resultado').style.display = 'none';
+        document.getElementById('btnVerificar').style.display = 'none';
         document.getElementById('btnMarcarUsado').style.display = 'none';
         document.getElementById('btnEscanear').style.display = 'none';
         document.getElementById('panelCaja').style.display = 'none';
-        qrDataActual = null;
-        vueltoActualUSD = 0;
+        qrDataActual = null; vueltoActualUSD = 0;
         html5QrcodeScanner.resume(); 
     }
 
-    // Inicializar
     obtenerTasa().then(iniciarEscaner);
 </script>
 
