@@ -117,10 +117,35 @@
 
     // 1. OBTENER LA TASA AL INICIAR
     async function obtenerTasa() {
+        const cacheName = 'coreobosco_tasa_caja';
+        const tiempoExpiracion = 2 * 60 * 60 * 1000; // La tasa se guarda por 2 horas (en milisegundos)
+        
+        // Revisamos si ya tenemos la tasa guardada en el teléfono/PC
+        const cacheGuardado = localStorage.getItem(cacheName);
+        if (cacheGuardado) {
+            const datosCache = JSON.parse(cacheGuardado);
+            const ahora = new Date().getTime();
+            
+            // Si no han pasado 2 horas, usamos la memoria (Es instantáneo)
+            if (ahora - datosCache.timestamp < tiempoExpiracion) {
+                tasaDelDia = datosCache.tasa;
+                document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs (Cargado rápido)`;
+                return; 
+            }
+        }
+
+        // Si no hay memoria o ya pasaron 2 horas, consultamos a Google
         try {
             const response = await fetch(APP_URL);
             const data = await response.json();
             tasaDelDia = data.tasa;
+            
+            // Guardamos la nueva tasa en la memoria del teléfono
+            localStorage.setItem(cacheName, JSON.stringify({
+                tasa: tasaDelDia,
+                timestamp: new Date().getTime()
+            }));
+            
             document.getElementById('loaderTasa').innerText = `Tasa del día: ${tasaDelDia} Bs`;
         } catch (e) {
             document.getElementById('loaderTasa').innerText = "⚠️ Error obteniendo tasa. Avise a administración.";
