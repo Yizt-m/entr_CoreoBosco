@@ -310,7 +310,11 @@
         }
 
         if (diferenciaUSD < 0) {
-            resumen.innerHTML = `<span style="color:red">Faltan: ${Math.abs(diferenciaUSD).toFixed(2)}$</span>`;
+            // AQUÍ ESTÁ LA MAGIA: Calculamos cuánto falta en USD y en Bs
+            let faltaUSD = Math.abs(diferenciaUSD);
+            let faltaBS = faltaUSD * tasaDelDia;
+            
+            resumen.innerHTML = `<span style="color:red">Faltan: ${faltaUSD.toFixed(2)}$ (Ref: ${faltaBS.toFixed(2)} Bs)</span>`;
             panelVuelto.style.display = 'none';
             btnMarcar.style.display = 'none'; 
         } else if (diferenciaUSD > 0) {
